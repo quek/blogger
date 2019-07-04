@@ -1,6 +1,6 @@
 # rebuild
 
-Markdown を grip で HTML に変更する
+Markdown を grip で HTML に変換する。
 
 grip のインストール
 
