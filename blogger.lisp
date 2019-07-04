@@ -1,24 +1,57 @@
 (in-package :blogger)
 
-(defvar *author* nil)
-(defvar *email* nil)
-(defvar *passwd* nil)
-(defvar *blog-id* nil)
+(defvar *blog-id*)
+(defvar *client-id*)
+(defvar *client-secret*)
+(defvar *refresh-token*)
 
 (defvar *blogger* nil)
 
 (load (merge-pathnames #p".blogger.lisp" (user-homedir-pathname)))
 
+
 ;; Drakma の設定
 ;; UTF-8
 (setq *drakma-default-external-format* :utf-8)
-;; application/atom+xml をバイナリではなくテキストとして扱う。
-(pushnew (cons "application" "atom+xml") drakma:*text-content-types*
+;; バイナリではなくテキストとして扱う。
+(pushnew (cons "application" "json") drakma:*text-content-types*
          :test #'equal)
 
-;; s-xml
-;; ネームスペースを使わない
-(setf s-xml:*ignore-namespaces* t)
+#+nil
+(defun how-to-get-refresh-token ()
+  ;; ブラザでこの URL にアクセスしアクセスコードを取得する
+  (quri:make-uri :scheme "https"
+                 :host "accounts.google.com"
+                 :path "/o/oauth2/v2/auth"
+                 :query (quri:url-encode-params
+                         `(("client_id" . ,*client-id*)
+                           ("redirect_uri" . "urn:ietf:wg:oauth:2.0:oob")
+                           ("scope" . "https://www.googleapis.com/auth/blogger")
+                           ("response_type" . "code")
+                           ("state" . "")
+                           ("code_challenge_method" . "plain")
+                           ("code_challenge" . ,(code-challenge)))))
+
+  ;; 取得したアクセスコードをセットして次を実行すれば refresh_token を取得できる
+  (let ((code "取得したアクセスコード"))
+   (http-request "https://www.googleapis.com/oauth2/v4/token"
+                 :method :post
+                 :parameters `(("code" . ,code)
+                               ("client_id" . ,*client-id*)
+                               ("client_secret" . ,*client-secret*)
+                               ("redirect_uri" . "urn:ietf:wg:oauth:2.0:oob")
+                               ("grant_type" . "authorization_code")
+                               ("code_verifier" . ,(code-challenge))))))
+
+(defun refresh-access-token ()
+  (let* ((response (http-request "https://www.googleapis.com/oauth2/v4/token"
+                                :method :post
+                                :parameters `(("refresh_token" . ,*refresh-token*)
+                                              ("client_id" . ,*client-id*)
+                                              ("client_secret" . ,*client-secret*)
+                                              ("grant_type" . "refresh_token"))))
+         (json (jsonq:read-json-from-string response)))
+    (jsonq:q json :access_token)))
 
 (defun escape-string (string)
   (with-output-to-string (out)
@@ -31,39 +64,22 @@
                                 (t c))))))
 
 (defclass blogger ()
-  ((sid :initform nil :accessor sid)
-   (lsid :initform nil :accessor lsid)
-   (auth :initform nil :accessor auth)
-   (blog-id :initform *blog-id* :accessor blog-id)
-   (author :initform *author* :accessor author)
-   (email :initform *email* :accessor email)
-   (passwd :initform *passwd* :accessor passwd)
-   (latest-entry :initform nil :accessor latest-entry)))
+  ((blog-id :initform *blog-id* :accessor blog-id)
+   (latest-entry :initform nil :accessor latest-entry)
+   (access-token :accessor .access-token)))
 
-(defmethod login-parameters ((blogger blogger))
-  `(("Email" . ,(email blogger))
-    ("Passwd" . ,(passwd blogger))
-    ("service" . "blogger")
-    ("source" . "common-lisp")))
-
+(defun code-challenge ()
+  "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
 
 (defmethod login ((blogger blogger))
-  (register-groups-bind (sid lsid auth)
-      ((create-scanner "^SID=(.*)\\nLSID=(.*)\\nAuth=(.*)$" :multi-line-mode t)
-       (http-request "https://www.google.com/accounts/ClientLogin"
-                     :method :post
-                     :parameters (login-parameters blogger)))
-    (or auth (error "loign failed."))
-    (setf (sid blogger) sid
-          (lsid blogger) lsid
-          (auth blogger) auth)))
+  (setf (.access-token blogger) (refresh-access-token)))
 
 (defmethod request ((blogger blogger) url &rest rest)
   (apply #'http-request
          url
          :additional-headers
-         `(("Authorization" . ,(format nil "GoogleLogin auth=~a"
-                                       (auth blogger))))
+         `(("Authorization" . ,(format nil "Bearer ~a"
+                                       (.access-token blogger))))
          rest))
 
 (defmethod list-of-blogs ((blogger blogger))
@@ -81,47 +97,41 @@
               (format nil "https://www.blogger.com/feeds/~a/posts/default/~a"
                       (blog-id blogger) entry-id))))
     (print res)
-    (setf (latest-entry blogger) (s-xml:parse-xml-string res))))
+    (setf (latest-entry blogger) (jsonq:read-json-from-string res))))
 
 
 
 (defmethod send-entry ((blogger blogger) url method post-data)
-  (print post-data)
   (let ((res (request blogger
                       url
                       :method method
-                      :content-type "application/atom+xml"
+                      :content-type "application/json"
                       :content-length
                       (length (flexi-streams:string-to-octets
                                post-data :external-format :utf-8))
                       :content post-data)))
     (print res)
-    (setf (latest-entry blogger) (s-xml:parse-xml-string res))))
+    (setf (latest-entry blogger) (jsonq:read-json-from-string res))))
 
-(defmethod prepare-entry ((blogger blogger) labels title contents)
-  (with-output-to-string (result)
-    (format result "<entry xmlns='http://www.w3.org/2005/Atom'>~%")
-    (dolist (label labels) 
-      (format result "<category scheme='http://www.blogger.com/atom/ns#' term='~a'/>~%" label))
-    (format result "<title type='text'>~a</title>
-<content type='xhtml'>~a</content>~%<author>~%<name>~a</name>~%<email>~a</email>
-  </author>~%</entry>" title contents (author blogger) (email blogger))
-    result
-    )
-  )
+(defmethod prepare-entry ((blogger blogger) labels title content)
+  (princ-to-string
+   (jsonq:obj
+    :kind "blogger#post"
+    :blog (jsonq:obj :id *blog-id*)
+    title
+    content)))
 
 (defmethod post-entry ((blogger blogger) labels title contents)
-  (let*
-      ((url (format nil "https://www.blogger.com/feeds/~a/posts/default"
-                    (blog-id blogger)))
-       (post-data (prepare-entry blogger labels title contents)))
+  (let* ((url (format nil "https://www.googleapis.com/blogger/v3/blogs/~a/posts"
+                      (blog-id blogger)))
+         (post-data (prepare-entry blogger labels title contents)))
     (send-entry blogger url :post post-data)))
 
 (defmethod edit-entry ((blogger blogger) labels title content)
   (replace-labels blogger labels)
   (replace-title blogger title)
   (replace-content blogger content)
-  (let ((post-data (s-xml:print-xml-string (latest-entry blogger ))))
+  (let ((post-data (princ-to-string (latest-entry blogger ))))
     (send-entry blogger
                 ;; (print (edit-href blogger))
                 (print (ppcre:regex-replace "^httpss" (edit-href blogger) "https"))
@@ -138,7 +148,7 @@
 	(setf (latest-entry blogger) (delete item (latest-entry blogger)))))
   (dolist (label labels)
     (setf (cddddr (latest-entry blogger))
-	  (cons (list (append 
+	  (cons (list (append
 		       '(:|category| :|scheme| "http://www.blogger.com/atom/ns#" :|term|)
 		       (list label)))
 		(cddddr (latest-entry blogger))))))
@@ -169,10 +179,10 @@
 (defmethod delete-entry ((blogger blogger))
   (request blogger (edit-href blogger) :method :delete))
 
-(defun get-additional-info (muse-file)
+(defun get-additional-info (original-file)
   ;; Plato Wu,2009/03/03: Modify to suppost label
   (let (title post-id labels)
-    (with-open-file (in muse-file)
+    (with-open-file (in original-file)
       (loop for l = (read-line in nil nil)
             while l
             do (progn
@@ -187,15 +197,14 @@
                    (setf labels (split "[,，]\\s*" labelstring))))))
     (values title post-id labels)))
 
-(defun html-file (muse-file)
-  (let ((file (make-pathname :directory "/tmp"
-                             :type "html"
-                             :defaults muse-file)))
+(defun html-file (original-file)
+  (let ((file (make-pathname :type "html"
+                             :defaults original-file)))
     (if (probe-file file)
       file
       (make-pathname :directory "/tmp"
-                     :type (format nil "~a.html" (pathname-type muse-file))
-                     :defaults muse-file))))
+                     :type (format nil "~a.html" (pathname-type original-file))
+                     :defaults original-file))))
 
 (defun need-space-char-p (char)
   (not
@@ -227,10 +236,12 @@ We need a space between lines in English.
 We do not need any space between lines in Japanese."
   (with-output-to-string (out)
     (with-open-file (in file)
+      (loop for current = (read-line in nil)
+            until (string= current "<body>"))
       (loop with pre-p = nil
             for current = (read-line in nil) then next
             for next = (read-line in nil)
-            while current
+            while (and current (string/= current "<script>"))
             do (write-string current out)
             do (cond ((scan "<pre[^>]*>.+$" current)
                       (setf pre-p t)
@@ -244,24 +255,24 @@ We do not need any space between lines in Japanese."
                      ((need-space-p current next)
                       (write-string " " out)))))))
 
-(defun add-post-id-to-file (muse-file)
+(defun add-post-id-to-file (original-file)
   (register-groups-bind (post-id) (".*/(.*)" (edit-href *blogger*))
     (let ((content (with-output-to-string (out)
-                     (with-open-file (in muse-file)
+                     (with-open-file (in original-file)
                        (loop for c = (read-char in nil nil)
                              while c
                              do (write-char c out))))))
-      (with-open-file (out muse-file :direction :output :if-exists :supersede)
+      (with-open-file (out original-file :direction :output :if-exists :supersede)
         (write-string content out)
         (format out "~&; post-id ~a~%" post-id)))))
 
 ;; api
-(defun post (muse-file)
+(defun post (original-file)
   (setf *blogger* (make-instance 'blogger))
   (login *blogger*)
   ;; Plato Wu,2009/03/12: need use a elegant way to refactory html-file function
-  (let ((content (get-content-from-file (html-file muse-file))))
-    (multiple-value-bind (title post-id labels) (get-additional-info muse-file)
+  (let ((content (get-content-from-file (html-file original-file))))
+    (multiple-value-bind (title post-id labels) (get-additional-info original-file)
       (if post-id
         ;; 修正
         (progn
@@ -270,5 +281,5 @@ We do not need any space between lines in Japanese."
         ;; 新規
         (progn
           (post-entry *blogger* labels title content)
-          (add-post-id-to-file muse-file)))))
+          (add-post-id-to-file original-file)))))
   *blogger*)
