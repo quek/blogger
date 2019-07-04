@@ -1,0 +1,172 @@
+#title Muse で書いて Blogger にポストするプログラム
+
+sak さんがコメントをくれたのでドキュメントを書きました。
+sak さんきっかけありがとうございます。
+
+* 概要
+
+とにかく Emacs から Blogger に投稿したかった。
+どうせなら Muse で書きたかった。
+simple-hatena-mode とかうらやましかった。
+というわけで作ってみたものです。
+
+できること。
+
+ - 新規投稿
+ - 投稿したものの修正
+
+めんどうなところ
+
+ - Slime 経由なので M-x slime とか事前にしておく必要がある。
+ - 新規投稿後、元ファイルの末尾に post-id をくっつけるので、
+   Emacs 上で再読み込みする必要がある。
+ - カテゴリにはまだ対応してない。
+ - Web 上で編集したものとローカルの Muse ファイルの同期はとれない。
+   Muse -> Web の一方通行。
+ - slime の repl バッファを見てないと、投稿が完了したかどうか分からない;)
+
+* 必要なもの
+
+ - [[http://www.gnu.org/software/emacs/emacs.html][Emacs]]
+ - [[http://mwolson.org/projects/EmacsMuse.html][Emacs Muse]]
+ - [[http://sbcl.sourceforge.net/][SBCL]]
+ - [[http://common-lisp.net/project/slime/][SLIME]]
+ - [[http://www.weitz.de/drakma/][Drakma]]
+ - [[http://www.weitz.de/cl-ppcre/][CL-PPCRE]]
+ - [[http://common-lisp.net/project/s-xml/][S-XML]]
+
+Drakma等は asdf-install を使って次のようにインストールするのが簡単だと思います。
+他には [[http://common-lisp.net/project/clbuild/][clbuild]] を使う方法もあります。
+
+<src lang="REPL">
+CL-USER> (require :asdf-install)
+("ASDF-INSTALL")
+CL-USER> (asdf-install:install :drakma)
+Install where?
+1) System-wide install: 
+   System in /usr/lib/sbcl/site-systems/
+   Files in /usr/lib/sbcl/site/ 
+2) Personal installation: 
+   System in /home/ancient/.sbcl/systems/
+   Files in /home/ancient/.sbcl/site/ 
+ --> 2
+</src>
+
+ここで 2 を入力してください。
+
+<src lang="REPL">
+No key found for key id 0x#1=595FF045057958C6.  Try some command like 
+  gpg  --recv-keys 0x#1#
+   [Condition of type ASDF-INSTALL::KEY-NOT-FOUND]
+
+Restarts:
+ 0: [SKIP-GPG-CHECK] Don't check GPG signature for this package
+ 1: [ABORT] Return to SLIME's top level.
+ 2: [TERMINATE-THREAD] Terminate this thread (#<THREAD "repl-thread" {10034FE621}>)
+</src>
+
+みたいなのが表示されたら 0 を入力してください。
+あと同様に cl-ppcre 等をインストールしてください。
+
+<src lang="REPL">
+(asdf-install:install :cl-ppcre)
+(asdf-install:install :s-xml)
+</src>
+
+
+* インストール
+
+** 取得
+
+最新バージョンを Subversion で取得します。
+dot.blogger.lisp を ~/.blogger.lisp にコピーします。
+
+<example>
+$ mkdir ~/lisp
+$ cd ~/lisp
+$ svn checkout http://cl-blogger.googlecode.com/svn/trunk/ blogger
+$ cd blogger
+$ cp dot.blogger.lisp ~/.blogger.lisp
+</example>
+
+
+** ~/.blogger.lisp の編集
+
+~/.blogger.lisp を編集します。
+
+設定内容は次のとおりです。
+
+ <literal>*author*</literal> ::
+   投稿ユーザ名
+ <literal>*email*</literal> ::
+   投稿ユーザ email
+ <literal>*passwd*</literal> ::
+   Blogger のパスワード
+ <literal>*blog-id*</literal> ::
+   ブログID
+
+ブログIDは Blogger のソースを表示すると次のような個所があると思いますので、
+"blogId=" の後のものを指定してください。
+
+<src lang="html">
+<link rel="EditURI" type="application/rsd+xml" title="RSD" href="http://www.blogger.com/rsd.g?blogID=1096313046657120208" />
+</src>
+
+
+** asdf:*central-registry* への追加
+
+~/.sbclrc 等で asdf:*central-registry* に blogger.asd
+のあるディレクトリを追加してください。
+
+<src lang="lisp">
+(pushnew (merge-pathnames #p"lisp/blogger/" (user-homedir-pathname))
+         asdf:*central-registry*
+         :test #'equal)
+</src>
+
+
+** ~/.emacs の編集
+
+~/.emacs に次の2行を追加してください。
+
+<src lang="lisp">
+(setq load-path (cons (expand-file-name "~/lisp/blogger") load-path))
+(autoload 'blogger-post "blogger" "Blogger Post" t)
+</src>
+
+
+* 使い方
+
+まず M-x slime 等で Slime を起動しておいてください。
+
+Muse の書式で投稿内容を編集してください。
+
+1行目は "#title" で始めてください。投稿の際にタイトルとして使います。
+
+<literal>; labels: </literal>で始まる行にコンマ区切りでラベルを指定することができます。
+<example>
+#title 題名
+
+投稿内容。。。
+ ; labels: ブログ, Common Lisp
+</example>
+↑ <literal>; labels: </literal>は行頭に記述してください。
+<literal>;</literal>の前にスペースは入れないでください。
+(Muse で example タグの中に ="; "= で始まる行を書くにはどうすればいいんだろう？)
+
+M-x blogger-post で投稿します。
+
+投稿後には Muse ファイルの末尾にポストIDを追加しますので、投稿後に再編集する場合は
+C-x C-v などで Muse ファイルを再読込してください。
+
+末尾のポストIDを保持するために次のような行が付加されます。
+
+<example>
+ ; post-id 3534792244000900117
+</example>
+
+上記のようなポストIDの行があると M-x blogger-post は既存エントリの置き換えになります。
+; Local Variables:
+; mode: muse
+; End:
+; post-id 8474884841438569021

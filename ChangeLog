@@ -1,0 +1,45 @@
+2010-11-21  Yoshinori Tahara  <read.eval.print@gmail.com>
+
+	* blogger.lisp (get-additional-info):
+	add escape-string, and escape title.
+
+2009-04-17  Yoshinori Tahara  <read.eval.print@gmail.com>
+
+	* blogger.lisp (get-content-from-file):
+	Fixed pre-p when </span></pre>.
+
+2009-04-08  Yoshinori Tahara  <read.eval.print@gmail.com>
+
+	* blogger.lisp (get-content-from-file): Delete changing line, and
+	do not insert space for a CJK character. Delete changing line, and
+	insert space except for a CJK character.
+	Because #\Newline and #\Space are unnecessary at changin line for
+	Japanese.
+
+2009-04-05  Plato Wu  <standin-000@tianya.cn>
+
+	* blogger.el (muse-html-markup-footnote):
+	redefine it to support multi post's footnote.
+
+2009-03-28  Yoshinori Tahara  <read.eval.print@gmail.com>
+
+	* blogger.el (muse-blogger-markup-strings): defvar
+	muse-blogger-markup-strings for for various styles.
+	I'd like markup section to h4, subsection to h5...
+
+2009-03-23 Plato Wu <standin-000@tianya.cn>
+
+	* blogger.lisp
+	Use xhtml1.1 to avoid the problem that the Blogger.com request
+	every html tag is symmetry. It is good based on my testing.
+
+2009-03-17  Plato Wu <standin-000@tianya.cn>
+
+	* blogger.lisp
+	Add supporting of label for post. The normal format of label is:
+        ; labels: label1,label2,label3
+
+2009-03-08  Yoshinori Tahara  <read.eval.print@gmail.com>
+
+	* apply path from Plato Wu.
+	change http protocol to https for Great Fire Wall!!!!
