@@ -94,7 +94,7 @@
 (defmethod retrive-entry ((blogger blogger) entry-id)
   (let ((res (request
               blogger
-              (format nil "https://www.blogger.com/feeds/~a/posts/default/~a"
+              (format nil "https://www.googleapis.com/blogger/v3/blogs/~a/posts/~a"
                       (blog-id blogger) entry-id))))
     (print res)
     (setf (latest-entry blogger) (jsonq:read-json-from-string res))))
@@ -131,33 +131,33 @@
   (replace-labels blogger labels)
   (replace-title blogger title)
   (replace-content blogger content)
-  (let ((post-data (princ-to-string (latest-entry blogger ))))
+  (let ((post-data (princ-to-string (latest-entry blogger))))
     (send-entry blogger
                 ;; (print (edit-href blogger))
-                (print (ppcre:regex-replace "^httpss" (edit-href blogger) "https"))
+                (format nil "https://www.googleapis.com/blogger/v3/blogs/~a/posts/~a"
+                        (blog-id blogger) (jsonq:q (latest-entry blogger) :id))
                 :put
                 post-data)))
 
-(defmethod replace-xml ((blogger blogger) tag text)
-  (setf (cdr (find tag (latest-entry blogger) :key #'find-key))
-        (list text)))
-
 (defmethod replace-labels ((blogger blogger) labels)
-  (dolist (item (latest-entry blogger))
-    (if (find :|category| (list item) :key #'find-key)
-	(setf (latest-entry blogger) (delete item (latest-entry blogger)))))
-  (dolist (label labels)
-    (setf (cddddr (latest-entry blogger))
-	  (cons (list (append
-		       '(:|category| :|scheme| "http://www.blogger.com/atom/ns#" :|term|)
-		       (list label)))
-		(cddddr (latest-entry blogger))))))
+  ;; (dolist (item (latest-entry blogger))
+  ;;   (if (find :|category| (list item) :key #'find-key)
+  ;;       (setf (latest-entry blogger) (delete item (latest-entry blogger)))))
+  ;; (dolist (label labels)
+  ;;   (setf (cddddr (latest-entry blogger))
+  ;;         (cons (list (append
+  ;;       	       '(:|category| :|scheme| "http://www.blogger.com/atom/ns#" :|term|)
+  ;;       	       (list label)))
+  ;;       	(cddddr (latest-entry blogger)))))
+  )
 
 (defmethod replace-title ((blogger blogger) title)
-  (replace-xml blogger :|title| title))
+  (setf (latest-entry blogger)
+        (jsonq:obj * (latest-entry blogger) title)))
 
 (defmethod replace-content ((blogger blogger) content)
-  (replace-xml blogger :|content| content))
+    (setf (latest-entry blogger)
+        (jsonq:obj * (latest-entry blogger) content)))
 
 (defmethod edit-href ((blogger blogger))
   ;; Plato Wu,2009/02/24: replace https instead of http
@@ -187,13 +187,13 @@
             while l
             do (progn
                  (register-groups-bind (ttl)
-                     ("^#title\\s*(.+)" l)
+                     ("^#\\s*(.+)" l)
                    (or title (setf title (escape-string ttl))))
                  (register-groups-bind (pstid)
-                     ("^; post-id (.+)" l)
+                     ("^<!-- post-id ([^ ]+) -->$" l)
                    (setf post-id pstid))
 		 (register-groups-bind (labelstring)
-                     ("^; *[lL]abels[:：]{0,1} *(.+)" l)
+                     ("^<!-- *[lL]abels[:：]{0,1} *(.+) *-->$" l)
                    (setf labels (split "[,，]\\s*" labelstring))))))
     (values title post-id labels)))
 
