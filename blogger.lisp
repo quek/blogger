@@ -256,15 +256,14 @@ We do not need any space between lines in Japanese."
                       (write-string " " out)))))))
 
 (defun add-post-id-to-file (original-file)
-  (register-groups-bind (post-id) (".*/(.*)" (edit-href *blogger*))
-    (let ((content (with-output-to-string (out)
-                     (with-open-file (in original-file)
-                       (loop for c = (read-char in nil nil)
-                             while c
-                             do (write-char c out))))))
-      (with-open-file (out original-file :direction :output :if-exists :supersede)
-        (write-string content out)
-        (format out "~&; post-id ~a~%" post-id)))))
+  (let ((content (with-output-to-string (out)
+                   (with-open-file (in original-file)
+                     (loop for c = (read-char in nil nil)
+                           while c
+                           do (write-char c out))))))
+    (with-open-file (out original-file :direction :output :if-exists :supersede)
+      (write-string content out)
+      (format out "~&<!-- post-id ~a -->~%" (jsonq:q (latest-entry *blogger*) :id)))))
 
 ;; api
 (defun post (original-file)
