@@ -270,15 +270,17 @@ We do not need any space between lines in Japanese."
   (setf *blogger* (make-instance 'blogger))
   (login *blogger*)
   ;; Plato Wu,2009/03/12: need use a elegant way to refactory html-file function
-  (let ((content (get-content-from-file (html-file original-file))))
+  (let* ((html-file (html-file original-file))
+         (content (get-content-from-file html-file)))
     (multiple-value-bind (title post-id labels) (get-additional-info original-file)
       (if post-id
-        ;; 修正
-        (progn
-          (retrive-entry *blogger* post-id)
-          (edit-entry *blogger* labels title content))
-        ;; 新規
-        (progn
-          (post-entry *blogger* labels title content)
-          (add-post-id-to-file original-file)))))
+          ;; 修正
+          (progn
+            (retrive-entry *blogger* post-id)
+            (edit-entry *blogger* labels title content))
+          ;; 新規
+          (progn
+            (post-entry *blogger* labels title content)
+            (add-post-id-to-file original-file))))
+    (delete-file html-file))
   *blogger*)
