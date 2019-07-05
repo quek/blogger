@@ -53,16 +53,6 @@
          (json (jsonq:read-json-from-string response)))
     (jsonq:q json :access_token)))
 
-(defun escape-string (string)
-  (with-output-to-string (out)
-    (loop for c across string
-          do (format out "~a" (case c
-                                (#\& "&amp;")
-                                (#\< "&lt;")
-                                (#\> "&gt;")
-                                (#\" "&quot;")
-                                (t c))))))
-
 (defclass blogger ()
   ((blog-id :initform *blog-id* :accessor blog-id)
    (latest-entry :initform nil :accessor latest-entry)
@@ -82,15 +72,6 @@
                                        (.access-token blogger))))
          rest))
 
-(defmethod list-of-blogs ((blogger blogger))
-  (request blogger "https://www.blogger.com/feeds/default/blogs"))
-
-(defmethod retrive-posts ((blogger blogger))
-  (request
-   blogger
-   (format nil "https://www.blogger.com/feeds/~a/posts/default"
-           (blog-id blogger))))
-
 (defmethod retrive-entry ((blogger blogger) entry-id)
   (let ((res (request
               blogger
@@ -98,8 +79,6 @@
                       (blog-id blogger) entry-id))))
     (print res)
     (setf (latest-entry blogger) (jsonq:read-json-from-string res))))
-
-
 
 (defmethod send-entry ((blogger blogger) url method post-data)
   (let ((res (request blogger
@@ -133,23 +112,14 @@
   (replace-content blogger content)
   (let ((post-data (princ-to-string (latest-entry blogger))))
     (send-entry blogger
-                ;; (print (edit-href blogger))
                 (format nil "https://www.googleapis.com/blogger/v3/blogs/~a/posts/~a"
                         (blog-id blogger) (jsonq:q (latest-entry blogger) :id))
                 :put
                 post-data)))
 
 (defmethod replace-labels ((blogger blogger) labels)
-  ;; (dolist (item (latest-entry blogger))
-  ;;   (if (find :|category| (list item) :key #'find-key)
-  ;;       (setf (latest-entry blogger) (delete item (latest-entry blogger)))))
-  ;; (dolist (label labels)
-  ;;   (setf (cddddr (latest-entry blogger))
-  ;;         (cons (list (append
-  ;;       	       '(:|category| :|scheme| "http://www.blogger.com/atom/ns#" :|term|)
-  ;;       	       (list label)))
-  ;;       	(cddddr (latest-entry blogger)))))
-  )
+  (setf (latest-entry blogger)
+        (jsonq:obj * (latest-entry blogger) labels)))
 
 (defmethod replace-title ((blogger blogger) title)
   (setf (latest-entry blogger)
@@ -158,26 +128,6 @@
 (defmethod replace-content ((blogger blogger) content)
     (setf (latest-entry blogger)
         (jsonq:obj * (latest-entry blogger) content)))
-
-(defmethod edit-href ((blogger blogger))
-  ;; Plato Wu,2009/02/24: replace https instead of http
-  (let ((href (getf (cdar
-		(find '(:|link| :|rel| "edit")
-		      (latest-entry blogger)
-		      :key #'(lambda (x)
-			       (and (consp (car x))
-				    (=  (length (car x)) 7)
-				    (subseq (car x) 0 3)))
-		      :test #'equal))
-	       :|href|)))
-    (regex-replace "http" href "https")
-    ))
-
-(defun find-key (x)
-  (and (consp (car x)) (caar x)))
-
-(defmethod delete-entry ((blogger blogger))
-  (request blogger (edit-href blogger) :method :delete))
 
 (defun get-additional-info (original-file)
   ;; Plato Wu,2009/03/03: Modify to suppost label
@@ -188,7 +138,7 @@
             do (progn
                  (register-groups-bind (ttl)
                      ("^#\\s*(.+)" l)
-                   (or title (setf title (escape-string ttl))))
+                   (or title (setf title ttl)))
                  (register-groups-bind (pstid)
                      ("^<!-- post-id ([^ ]+) -->$" l)
                    (setf post-id pstid))
