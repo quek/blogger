@@ -4,4 +4,4 @@
   :serial t
   :components ((:file "packages")
                (:file "blogger"))
-  :depends-on (drakma cl-ppcre cl-unicode jsonq))
+  :depends-on (drakma cl-ppcre cl-unicode lquery jsonq))

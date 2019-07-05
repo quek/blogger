@@ -185,9 +185,8 @@ We need a #\Newline in pre tag.
 We need a space between lines in English.
 We do not need any space between lines in Japanese."
   (with-output-to-string (out)
-    (with-open-file (in file)
-      (loop for current = (read-line in nil)
-            until (string= current "<body>"))
+    (with-open-stream (in (make-string-input-stream
+                           (lquery:$1 (initialize file) "article" (serialize))))
       (loop with pre-p = nil
             for current = (read-line in nil) then next
             for next = (read-line in nil)
